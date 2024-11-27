@@ -105,8 +105,8 @@ pf.censor("Да бля, это просто shit какой-то!")
 import spacy
 from profanity_filter import ProfanityFilter
 
-nlp = spacy.load('en')
-profanity_filter = ProfanityFilter(nlps={'en': nlp})  # reuse spacy Language (optional)
+nlp = spacy.load('en_core_web_sm')
+profanity_filter = ProfanityFilter(nlps={'en_core_web_sm': nlp})  # reuse spacy Language (optional)
 nlp.add_pipe(profanity_filter.spacy_component, last=True)
 
 doc = nlp('This is shiiit!')

@@ -51,7 +51,7 @@ def pf(request) -> ProfanityFilter:
 
 @pytest.fixture
 def nlp(pf) -> spacy.language.Language:
-    nlp = spacy.load('en')
+    nlp = spacy.load('en_core_web_sm')
     nlp.add_pipe(pf.spacy_component, last=True)
     return nlp
 

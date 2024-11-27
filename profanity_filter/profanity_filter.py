@@ -212,12 +212,6 @@ class ProfanityFilter:
         """Returns True if input_text contains any profane words, False otherwise"""
         return self._censor(text=text, return_bool=True)
 
-    @cached_property
-    def spacy_component(self, language: Language = None) -> SpacyProfanityFilterComponent:
-        nlp = self._get_nlp(language)
-        [language] = [language for language, nlp_ in self.nlps.items() if nlp_ == nlp]
-        return SpacyProfanityFilterComponent(profanity_filter=self, nlp=nlp, language=language)
-
     @property
     def analyses(self) -> AnalysesTypes:
         return self._analyses
@@ -461,9 +455,6 @@ class ProfanityFilter:
     def _get_max_distance(self, length: int) -> float:
         return min(self._MAX_MAX_DISTANCE, floor(self.max_relative_distance * length))
 
-    def _make_spacy_token(self, language: Language, word: str) -> spacy.tokens.Token:
-        return spacy_utlis.make_token(nlp=self._get_nlp(language), word=word)
-
     def _drop_fully_censored_words(self, substrings: Substrings) -> Substrings:
         return ((word, start, finish)
                 for word, start, finish in substrings
@@ -514,12 +505,65 @@ class ProfanityFilter:
             with suppress(KeyError):
                 return self.nlps[nlp_language]
 
+    @property
+    def nlps(self) -> Nlps:
+        return self._nlps
+    
+    @nlps.setter
+    def nlps(self, value: Optional[Nlps]) -> None:
+        self.clear_cache()
+        if value is not None:
+            self._nlps = value
+        else:
+            self._nlps = {}
+            for language in self.languages:
+                with suppress(OSError):
+                    # Update to use disable list as per spaCy 3.0
+                    self._nlps[language] = spacy.load(language, disable=["parser", "ner"])
+                    # Create and add the component with proper config
+                    component = SpacyProfanityFilterComponent(
+                        profanity_filter=self,
+                        nlp=self._nlps[language],
+                        name="profanity_filter",
+                        language=language
+                    )
+                    if not self._nlps[language].has_pipe("profanity_filter"):
+                        self._nlps[language].add_pipe("profanity_filter", last=True, factory=lambda nlp, name: component)
+            if not self._nlps:
+                raise ProfanityFilterError(f"Couldn't load Spacy model for any of languages: {self.languages_str}")
+    
+    def _make_spacy_token(self, language: Language, word: str) -> spacy.tokens.Token:
+        """Create a spaCy token from a string"""
+        nlp = self._get_nlp(language)
+        # Update to use make_doc for token creation in spaCy 3.0
+        doc = nlp.make_doc(word)
+        return doc[0]
+    
     def _parse(self,
                language: Language,
                text: str,
                use_profanity_filter: bool = True) -> spacy.tokens.Doc:
+        """Parse text using spaCy"""
         nlp = self._get_nlp(language)
-        return spacy_utlis.parse(nlp=nlp, text=text, language=language, use_profanity_filter=use_profanity_filter)
+        # Create doc and apply pipeline
+        doc = nlp.make_doc(text)
+        if use_profanity_filter:
+            for name, pipe in nlp.pipeline:
+                if name != "profanity_filter":
+                    doc = pipe(doc)
+        return doc
+    
+    @cached_property
+    def spacy_component(self, language: Language = None) -> SpacyProfanityFilterComponent:
+        """Get the spaCy profanity filter component"""
+        nlp = self._get_nlp(language)
+        [language] = [language for language, nlp_ in self.nlps.items() if nlp_ == nlp]
+        return SpacyProfanityFilterComponent(
+            profanity_filter=self,
+            nlp=nlp,
+            name="profanity_filter",
+            language=language
+        )
 
     def _get_spells(self, language: Language) -> 'OrderedSet[HunSpell]':
         result = OrderedSet([DummyHunSpell()])
